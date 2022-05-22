@@ -1,8 +1,7 @@
 from tkinter import *
 from random import *
 from time import sleep
-from timeit import default_timer
-from datetime import datetime
+from PIL import Image, ImageTk
 
 
 class CaveGenerator:
@@ -79,40 +78,6 @@ class CaveGenerator:
         return self.tilemap
 
 
-
-#map stuff
-################################################################
-root = Tk()#master runtime guy
-root.title('Cave Game')
-
-#map sizing stuff
-w=800
-h=500
-cellsize=10
-noise_density=57
-iterations=6
-cave_generator=CaveGenerator(w,h,cellsize,noise_density,iterations)
-tilemap=cave_generator.generate()
-changed=True
-
-#boring gui stuff
-canvas=Canvas(root, width=w, height=h, bg='white')
-canvas.pack()
-
-#make the character
-#to reference the player's location: use tilemap[-1][0] for x, tilemap[-1][1]
-#the indices of the first (50) lists and the indices of their values represent tilemap locations, while the values themselves represent wallvalue
-#however the values of the last list represent the tilemap location of the player. weird i know
-for i in range(len(tilemap)):
-    over=False
-    for j in range(len(tilemap[i])):
-        if not cave_generator.is_wall(j,i):#place him somewhere that isn't a wall
-            tilemap.append([j,i])
-            over=True
-            break
-    if over:
-        break
-
 #generate money map
 ####################################################################
 def find_hex_color(rgb):
@@ -129,6 +94,64 @@ def generate_color(value, gradient):
     b=value * int(gradient[2] / diff)
     return find_hex_color((r,g,b))
 
+#map stuff
+################################################################
+#initialization stuff
+w=800
+h=500
+cellsize=10
+noise_density=57
+iterations=6
+
+wall_color=(255,0,0)#red
+ground_color=(167, 129, 68)#brownish
+grid_color=find_hex_color((167, 129, 68))#brownish
+gui_bg_color=find_hex_color((147,109,48))#darker brownish
+money_color=find_hex_color((255,255,0))
+transparent=find_hex_color((255,255,254))#reserved this to be seen as transparent
+
+money=0#the player's amount of cash money dolla beeohs
+
+root = Tk()#master runtime guy
+root.title('Cave Game')
+root.configure(background=gui_bg_color)
+root.wm_attributes('-transparentcolor',transparent)
+
+cave_generator=CaveGenerator(w,h,cellsize,noise_density,iterations)
+tilemap=cave_generator.generate()
+changed=True
+
+
+#boring gui stuff
+############################################################################
+money_label=Label(root,text=f'${money:>4}',fg=money_color,bg='black',font=('courier',20))
+
+canvas=Canvas(root, width=w, height=h, bg=find_hex_color(ground_color), bd=0)
+
+photo=PhotoImage(file='pheart.png')
+photoimage=photo.subsample(10,10)
+heartlabel=Label(root,image=photoimage,background=gui_bg_color)
+
+money_label.grid(row=0,column=0)
+heartlabel.grid(row=0,column=1,sticky='w')
+canvas.grid(row=1,column=0,columnspan=int(0.5*(w/cellsize)))
+
+
+#make the character
+###################################################################################
+#to reference the player's location: use tilemap[-1][0] for x, tilemap[-1][1]
+#the indices of the first (50) lists and the indices of their values represent tilemap locations, while the values themselves represent wallvalue
+#however the values of the last list represent the tilemap location of the player. weird i know
+for i in range(len(tilemap)):
+    over=False
+    for j in range(len(tilemap[i])):
+        if not cave_generator.is_wall(j,i):#place him somewhere that isn't a wall
+            tilemap.append([j,i])
+            over=True
+            break
+    if over:
+        break
+
     
 #draw the tilemap
 ####################################################################
@@ -142,9 +165,9 @@ def draw_tilemap():
         
         #gridlines
         for i in range(0,w,cellsize):
-            canvas.create_line(i,0,i,h,fill='gray')
+            canvas.create_line(i,0,i,h,fill=grid_color)
         for i in range(0,h,cellsize):
-            canvas.create_line(0,i,w,i,fill='gray')
+            canvas.create_line(0,i,w,i,fill=grid_color)
 
         #tiles
         for i in range(len(tilemap))[:-1]:
@@ -155,7 +178,7 @@ def draw_tilemap():
                     x2=x1+cellsize
                     y2=y1+cellsize
                     
-                    canvas.create_rectangle(x1,y1,x2,y2,fill=generate_color(tilemap[i][j],(255,255,0)))
+                    canvas.create_rectangle(x1,y1,x2,y2,fill=generate_color(tilemap[i][j],wall_color))
         changed=False
 
         
@@ -208,9 +231,12 @@ def move_player(newx,newy):
             
 
 def mine_tile(col,row):
+    global changed
+    global money
     if cave_generator.is_wall(col,row):
+        money+=tilemap[row][col]
+        money_label['text']=f'${money:>4}'
         tilemap[row][col]=cave_generator.maxvalue
-        global changed
         changed=True
     
                 
