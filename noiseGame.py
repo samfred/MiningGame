@@ -2,13 +2,14 @@ from tkinter import *
 from random import *
 from time import sleep
 from PIL import Image, ImageTk
+from datetime import datetime
 
 
 class CaveGenerator:
     
     def __init__(self,width,height,cell_size,noise_dens,iters):
-        self.minvalue=0
-        self.maxvalue=99
+        self.minvalue=0#please make positive
+        self.maxvalue=99#^^
         self.noise_density=noise_dens
         self.iterations=iters
 
@@ -67,7 +68,7 @@ class CaveGenerator:
         return x>=0 and x<self.cols and y>=0 and y<self.rows
 
     def is_wall(self,x,y):
-        return self.tilemap[y][x]<=self.noise_density
+        return self.tilemap[y][x] in range(0,self.noise_density+1)
 
 
     #wrapper methods
@@ -103,14 +104,20 @@ cellsize=10
 noise_density=57
 iterations=6
 
-wall_color=(255,0,0)#red
+wall_color=(255,255,0)#red
 ground_color=(167, 129, 68)#brownish
 grid_color=find_hex_color((167, 129, 68))#brownish
 gui_bg_color=find_hex_color((147,109,48))#darker brownish
 money_color=find_hex_color((255,255,0))
 transparent=find_hex_color((255,255,254))#reserved this to be seen as transparent
 
+player_pos=None
 money=0#the player's amount of cash money dolla beeohs
+lives=3#player's lives duh
+hurttime=datetime.now()
+immunity=2#seconds the player should have immunity after being hit
+
+enemies={'bill':[5,5]}
 
 root = Tk()#master runtime guy
 root.title('Cave Game')
@@ -124,34 +131,57 @@ changed=True
 
 #boring gui stuff
 ############################################################################
-money_label=Label(root,text=f'${money:>4}',fg=money_color,bg='black',font=('courier',20))
+money_label=Label(root,text=f'${money:>4}',fg=money_color,bg=gui_bg_color,font=('courier 40 bold'))
 
-canvas=Canvas(root, width=w, height=h, bg=find_hex_color(ground_color), bd=0)
+canvas=Canvas(root, width=w, height=h, bg=find_hex_color(ground_color),highlightthickness=0)
 
 photo=PhotoImage(file='pheart.png')
 photoimage=photo.subsample(10,10)
-heartlabel=Label(root,image=photoimage,background=gui_bg_color)
+
+heartlabels=[]
+for i in range(lives):
+    heartlabels.append(Label(root,image=photoimage,background=gui_bg_color))
+    heartlabels[-1].grid(row=0,column=1+i)
 
 money_label.grid(row=0,column=0)
-heartlabel.grid(row=0,column=1,sticky='w')
 canvas.grid(row=1,column=0,columnspan=int(0.5*(w/cellsize)))
 
 
-#make the character
+
+#place stuff in the map
 ###################################################################################
+#place player
 #to reference the player's location: use tilemap[-1][0] for x, tilemap[-1][1]
 #the indices of the first (50) lists and the indices of their values represent tilemap locations, while the values themselves represent wallvalue
 #however the values of the last list represent the tilemap location of the player. weird i know
-for i in range(len(tilemap)):
-    over=False
-    for j in range(len(tilemap[i])):
-        if not cave_generator.is_wall(j,i):#place him somewhere that isn't a wall
-            tilemap.append([j,i])
-            over=True
+def place_stuff():
+    global player_pos
+    global tilemap
+    
+    for i in range(len(tilemap)):
+        over=False
+        for j in range(len(tilemap[i])):
+            if not cave_generator.is_wall(j,i):#place him somewhere that isn't a wall
+                player_pos=[j,i]
+                over=True
+                break
+        if over:
             break
-    if over:
-        break
 
+    #place entry and exit
+    #entry
+    tilemap[player_pos[1]][player_pos[0]]=-1
+
+    #exit
+    for i in range(len(tilemap)-1,-1,-1):
+        over=False
+        for j in range(len(tilemap[i])-1,-1,-1):
+            if not cave_generator.is_wall(j,i):
+                tilemap[i][j]=-2
+                over=True
+                break
+        if over:
+            break
     
 #draw the tilemap
 ####################################################################
@@ -170,27 +200,55 @@ def draw_tilemap():
             canvas.create_line(0,i,w,i,fill=grid_color)
 
         #tiles
-        for i in range(len(tilemap))[:-1]:
+        for i in range(len(tilemap)):
             for j in range(len(tilemap[i])):
-                if tilemap[i][j] <= noise_density:
-                    x1=j*cellsize
-                    y1=i*cellsize
-                    x2=x1+cellsize
-                    y2=y1+cellsize
+                x1=j*cellsize
+                y1=i*cellsize
+                x2=x1+cellsize
+                y2=y1+cellsize
+                color=None
+                tile=False
+                
+                if tilemap[i][j] == -1:
+                    color='pink'
+                    tile=True
+                elif tilemap[i][j] == -2:
+                    color='pink'
+                    tile=True
+                elif tilemap[i][j] <= noise_density:
+                    color=generate_color(tilemap[i][j],wall_color)
+                    tile=True
+                for k in enemies:
+                    if enemies[k] == [j,i]:
+                        color='red'
+                        tile=True
                     
-                    canvas.create_rectangle(x1,y1,x2,y2,fill=generate_color(tilemap[i][j],wall_color))
+                if tile:
+                    canvas.create_rectangle(x1,y1,x2,y2,fill=color)
         changed=False
 
         
     #player tile
     global player
+    global player_pos
     canvas.delete(player)
-    x1=tilemap[-1][0]*cellsize
-    y1=tilemap[-1][1]*cellsize
+    x1=player_pos[0]*cellsize
+    y1=player_pos[1]*cellsize
     x2=x1+cellsize
     y2=y1+cellsize
     player=canvas.create_rectangle(x1,y1,x2,y2,fill='blue')
 
+#game build stuff
+#######################################################################
+def next_level():
+    global tilemap
+    global changed
+    
+    tilemap=cave_generator.generate()
+    changed=True
+    place_stuff()
+
+    sleep(1)
     
 
 #player actions
@@ -207,11 +265,25 @@ def keydown(e):
         actions.append(e.keysym)
         
 def handle_actions():
+    global player_pos
+    global hurttime
+    global immunity
+
+    #check player position for special stuff to do
+    if tilemap[player_pos[1]][player_pos[0]] == -2:#if current space is the exit
+        next_level()
+
+    for k in enemies:
+        if player_pos == enemies[k] and (datetime.now()-hurttime).total_seconds() > immunity:
+            lose_health(1)
+            hurttime=datetime.now()
+
+    #move and mine
     switch={'w':[0,-1],'s':[0,1],'a':[-1,0],'d':[1,0],'space':None}
-    movenewx=tilemap[-1][0]
-    movenewy=tilemap[-1][1]
-    minenewx=tilemap[-1][0]
-    minenewy=tilemap[-1][1]
+    movenewx=player_pos[0]
+    movenewy=player_pos[1]
+    minenewx=player_pos[0]
+    minenewy=player_pos[1]
     for char in actions:#gets the total prospect direction of movement
         if char in 'wasd':
             if cave_generator.is_in_map(movenewx+switch[char][0],movenewy+switch[char][1]) and not cave_generator.is_wall(movenewx+switch[char][0],movenewy+switch[char][1]):
@@ -225,9 +297,9 @@ def handle_actions():
     
     
 def move_player(newx,newy):
+    global player_pos
     if cave_generator.is_in_map(newx,newy) and not cave_generator.is_wall(newx,newy):
-            tilemap[-1][0]=newx
-            tilemap[-1][1]=newy
+        player_pos=[newx,newy]
             
 
 def mine_tile(col,row):
@@ -238,10 +310,20 @@ def mine_tile(col,row):
         money_label['text']=f'${money:>4}'
         tilemap[row][col]=cave_generator.maxvalue
         changed=True
+
+def lose_health(amount):
+    global lives
+    if lives > 0:
+        heartlabels[0].grid_forget()
+        heartlabels.pop(0)
+        lives-=amount
+    else:
+        print('you died play again?')
     
                 
 #do all the actions
 ########################################################################
+place_stuff()
 draw_tilemap()
 root.update()
 
