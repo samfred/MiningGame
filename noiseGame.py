@@ -117,7 +117,9 @@ lives=3#player's lives duh
 hurttime=datetime.now()
 immunity=2#seconds the player should have immunity after being hit
 
-enemies={'bill':[5,5]}
+difficulty=10#closer to zero is more enemies
+tiles_broken=0
+enemies=[]
 
 root = Tk()#master runtime guy
 root.title('Cave Game')
@@ -182,18 +184,37 @@ def place_stuff():
                 break
         if over:
             break
-    
+
+def place_enemies():
+    global tiles_broken
+    global difficulty
+    global enemies
+
+    for k in range(int(tiles_broken / difficulty)+1-len(enemies)):
+        over=False
+        found=False
+        while not found:
+            i=randint(0,len(tilemap)-1)
+            j=randint(0,len(tilemap[0])-1)
+            if not cave_generator.is_wall(j,i):#place him somewhere that isn't a wall
+                 enemies.append(('shadow',[j,i]))
+                 found=True
+                 over=True
+        if over:
+            break
 #draw the tilemap
 ####################################################################
 player=canvas.create_rectangle(0,0,cellsize,cellsize,fill='blue')
     
 def draw_tilemap():
     global changed
+    global enemies
+    
     if changed:
         #clear the canvas
         canvas.delete('all')
         
-        #gridlines
+        #gridlines: aren't doing anything as they are same color as ground
         for i in range(0,w,cellsize):
             canvas.create_line(i,0,i,h,fill=grid_color)
         for i in range(0,h,cellsize):
@@ -218,13 +239,13 @@ def draw_tilemap():
                 elif tilemap[i][j] <= noise_density:
                     color=generate_color(tilemap[i][j],wall_color)
                     tile=True
-                for k in enemies:
-                    if enemies[k] == [j,i]:
+                for k in range(len(enemies)):
+                    if enemies[k][1] == [j,i]:
                         color='red'
                         tile=True
                     
                 if tile:
-                    canvas.create_rectangle(x1,y1,x2,y2,fill=color)
+                    canvas.create_rectangle(x1,y1,x2,y2,fill=color)#,outline=color get rid of black outline
         changed=False
 
         
@@ -243,10 +264,16 @@ def draw_tilemap():
 def next_level():
     global tilemap
     global changed
+    global tiles_broken
+    global enemies
+    
+    tiles_broken=0
+    enemies=[]
     
     tilemap=cave_generator.generate()
     changed=True
     place_stuff()
+    place_enemies()
 
     sleep(1)
     
@@ -273,8 +300,8 @@ def handle_actions():
     if tilemap[player_pos[1]][player_pos[0]] == -2:#if current space is the exit
         next_level()
 
-    for k in enemies:
-        if player_pos == enemies[k] and (datetime.now()-hurttime).total_seconds() > immunity:
+    for i in range(len(enemies)):
+        if player_pos == enemies[i][1] and (datetime.now()-hurttime).total_seconds() > immunity:
             lose_health(1)
             hurttime=datetime.now()
 
@@ -305,11 +332,14 @@ def move_player(newx,newy):
 def mine_tile(col,row):
     global changed
     global money
+    global tiles_broken
     if cave_generator.is_wall(col,row):
         money+=tilemap[row][col]
         money_label['text']=f'${money:>4}'
         tilemap[row][col]=cave_generator.maxvalue
         changed=True
+        tiles_broken+=1
+        place_enemies()
 
 def lose_health(amount):
     global lives
@@ -324,6 +354,7 @@ def lose_health(amount):
 #do all the actions
 ########################################################################
 place_stuff()
+place_enemies()
 draw_tilemap()
 root.update()
 
