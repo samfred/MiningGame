@@ -119,7 +119,10 @@ immunity=2#seconds the player should have immunity after being hit
 
 difficulty=10#closer to zero is more enemies
 tiles_broken=0
+enemy_move=datetime.now()
+enemy_move_speed=1.5#closer to zero is faster
 enemies=[]
+enemy_objects=[]
 
 root = Tk()#master runtime guy
 root.title('Cave Game')
@@ -148,18 +151,42 @@ for i in range(lives):
 money_label.grid(row=0,column=0)
 canvas.grid(row=1,column=0,columnspan=int(0.5*(w/cellsize)))
 
-
+player=canvas.create_rectangle(0,0,cellsize,cellsize,fill='blue')
 
 #place stuff in the map
 ###################################################################################
-#place player
-#to reference the player's location: use tilemap[-1][0] for x, tilemap[-1][1]
-#the indices of the first (50) lists and the indices of their values represent tilemap locations, while the values themselves represent wallvalue
-#however the values of the last list represent the tilemap location of the player. weird i know
 def place_stuff():
     global player_pos
     global tilemap
+
+    #'realistically' cluster valuable walls vs. cheap ones
+    most=range(int(6/7*noise_density), noise_density)
+    middle=int(5/7*noise_density)
+    least=int(2/7*noise_density)
     
+    for i in range(len(tilemap)):
+        for j in range(len(tilemap[i])):
+            if cave_generator.is_wall(j,i):
+                if tilemap[i][j] in most:
+                    tilemap[i][j]=noise_density
+                else:
+                    most_neighbor=False
+                    for m in range(i-1,i+2):
+                        for n in range(j-1,j+2):
+                            if cave_generator.is_in_map(n,m) and tilemap[m][n] in most:
+                                most_neighbor=True
+                                break
+                        if most_neighbor:
+                            break
+                    if most_neighbor:
+                        tilemap[i][j]=middle
+                    else:
+                        tilemap[i][j]=least
+    
+    #place player
+    #to reference the player's location: use tilemap[-1][0] for x, tilemap[-1][1]
+    #the indices of the first (50) lists and the indices of their values represent tilemap locations, while the values themselves represent wallvalue
+    #however the values of the last list represent the tilemap location of the player. weird i know
     for i in range(len(tilemap)):
         over=False
         for j in range(len(tilemap[i])):
@@ -189,6 +216,7 @@ def place_enemies():
     global tiles_broken
     global difficulty
     global enemies
+    global enemy_objects
 
     for k in range(int(tiles_broken / difficulty)+1-len(enemies)):
         over=False
@@ -197,18 +225,19 @@ def place_enemies():
             i=randint(0,len(tilemap)-1)
             j=randint(0,len(tilemap[0])-1)
             if not cave_generator.is_wall(j,i):#place him somewhere that isn't a wall
-                 enemies.append(('shadow',[j,i]))
+                 enemies.append(['shadow',[j,i]])
+                 enemy_objects.append(canvas.create_rectangle(0,0,cellsize,cellsize,fill='red'))
                  found=True
                  over=True
         if over:
             break
 #draw the tilemap
 ####################################################################
-player=canvas.create_rectangle(0,0,cellsize,cellsize,fill='blue')
-    
 def draw_tilemap():
     global changed
     global enemies
+    global enemy_objects
+    global canvas
     
     if changed:
         #clear the canvas
@@ -239,15 +268,18 @@ def draw_tilemap():
                 elif tilemap[i][j] <= noise_density:
                     color=generate_color(tilemap[i][j],wall_color)
                     tile=True
-                for k in range(len(enemies)):
-                    if enemies[k][1] == [j,i]:
-                        color='red'
-                        tile=True
                     
                 if tile:
                     canvas.create_rectangle(x1,y1,x2,y2,fill=color)#,outline=color get rid of black outline
         changed=False
 
+    for k in range(len(enemies)):
+        canvas.delete(enemy_objects[k])
+        x1=enemies[k][1][0]*cellsize
+        y1=enemies[k][1][1]*cellsize
+        x2=x1+cellsize
+        y2=y1+cellsize
+        enemy_objects[k]=canvas.create_rectangle(x1,y1,x2,y2,fill='red')
         
     #player tile
     global player
@@ -281,20 +313,45 @@ def next_level():
 #player actions
 ########################################################################
 actions=[]
+bad_actions=['Shift_L','Shift_R','Caps_Lock']
 
                     
 def keyup(e):
-    if  e.keysym in actions :
-        actions.pop(actions.index(e.keysym))
+    if  e.keysym in actions and e.keysym not in bad_actions:
+        actions.pop(actions.index(e.keysym.lower()))
 
 def keydown(e):
-    if not e.keysym in actions :
-        actions.append(e.keysym)
+    if not e.keysym in actions and e.keysym not in bad_actions:
+        actions.append(e.keysym.lower())
+
+def next_move(start,end):
+    xdiff=end[0]-start[0]
+    ydiff=end[1]-start[1]
+
+    x=0
+    y=0
+    
+    if xdiff > 0:
+        x=1
+    elif xdiff < 0:
+        x=-1
+    else:
+        x=0
+    if ydiff > 0:
+        y=1
+    elif ydiff < 0:
+        y=-1
+    else:
+        y=0
+    return [x,y]
         
 def handle_actions():
     global player_pos
     global hurttime
     global immunity
+    global enemies
+    global enemy_move
+    global enemy_move_speed
 
     #check player position for special stuff to do
     if tilemap[player_pos[1]][player_pos[0]] == -2:#if current space is the exit
@@ -304,6 +361,19 @@ def handle_actions():
         if player_pos == enemies[i][1] and (datetime.now()-hurttime).total_seconds() > immunity:
             lose_health(1)
             hurttime=datetime.now()
+
+    #move enemies
+    moved=False
+    for k in range(len(enemies)):
+        if (datetime.now()-enemy_move).total_seconds() > enemy_move_speed:
+            if not cave_generator.is_wall(enemies[k][1][0]+next_move(enemies[k][1],player_pos)[0],enemies[k][1][1]):
+                enemies[k][1][0]+=next_move(enemies[k][1],player_pos)[0]
+            if not cave_generator.is_wall(enemies[k][1][0],enemies[k][1][1]+next_move(enemies[k][1],player_pos)[1]):
+                enemies[k][1][1]+=next_move(enemies[k][1],player_pos)[1]
+            moved=True
+    if moved:
+        enemy_move=datetime.now()
+        moved=False
 
     #move and mine
     switch={'w':[0,-1],'s':[0,1],'a':[-1,0],'d':[1,0],'space':None}
@@ -363,6 +433,7 @@ root.bind('<KeyRelease>', keyup)
     
 while True:
     #check player movement
+    print(actions)
     handle_actions()
     draw_tilemap()
     root.update()
